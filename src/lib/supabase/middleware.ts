@@ -1,8 +1,25 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+function isAuthRoute(pathname: string) {
+  // Allow /auth/callback, /auth/logout, etc. Block only the login/register pages.
+  return (
+    pathname === "/auth" ||
+    pathname === "/auth/login" ||
+    pathname === "/auth/sign-up" ||
+    pathname === "/auth/register"
+  );
+}
+
+function isAdminRoute(pathname: string) {
+  // Any route under /dashboard/admin is considered admin-only
+  return (
+    pathname === "/dashboard/admin" || pathname.startsWith("/dashboard/admin/")
+  );
+}
+
 export async function updateSession(request: NextRequest) {
-  // Start a mutable response
+  // Create ONE mutable response and return the same instance (so refreshed cookies are attached)
   const response = NextResponse.next();
 
   const supabase = createServerClient(
@@ -10,13 +27,11 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        // Edge-safe: read cookies from the incoming request
         getAll() {
           return request.cookies
             .getAll()
             .map(({ name, value }) => ({ name, value }));
         },
-        // Edge-safe: write cookies ONLY on the outgoing response
         setAll(cookies) {
           cookies.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
@@ -26,22 +41,55 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Keep this immediately after client creation
-  const { data } = await supabase.auth.getClaims();
-  const user = data?.claims;
+  // Validate/refresh session and write any updated cookies onto `response`
+  const { data: userData } = await supabase.auth.getUser();
+  const user = userData?.user ?? null;
 
-  // Minimal route guard example (feel free to tailor):
-  if (
-    request.nextUrl.pathname.startsWith("/dashboard") &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
+  const { pathname, searchParams } = request.nextUrl;
+
+  // 1) Gate protected routes for unauthenticated users
+  if (pathname.startsWith("/dashboard") && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
-    url.searchParams.set("redirectTo", request.nextUrl.pathname);
+    url.searchParams.set(
+      "redirectTo",
+      pathname + (searchParams.toString() ? `?${searchParams.toString()}` : "")
+    );
     return NextResponse.redirect(url);
   }
 
-  // IMPORTANT: return the same response instance where cookies were set
+  // 2) Block auth pages for authenticated users
+  if (user && isAuthRoute(pathname)) {
+    const url = request.nextUrl.clone();
+    const redirectTo = request.nextUrl.searchParams.get("redirectTo");
+    url.pathname =
+      redirectTo && redirectTo.startsWith("/") ? redirectTo : "/dashboard";
+    url.search = ""; // avoid loop/noisy params
+    return NextResponse.redirect(url);
+  }
+
+  // 3) Admin gate: only allow users with Profile.role === 'ADMIN'
+  if (user && isAdminRoute(pathname)) {
+    // Try to read the role from your public Profile table via PostgREST.
+    // Assumes you have an RLS policy that allows users to select their own profile row.
+    const { data: profile, error: profileError } = await supabase
+      .from("Profile")
+      .select("role")
+      .eq("userId", user.id)
+      .single();
+
+    // If we couldn't fetch, or role is not ADMIN, redirect away from admin
+    const role = profile?.role ?? null;
+    const isAdmin = role === "ADMIN";
+
+    if (profileError || !isAdmin) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard"; // send non-admins to main dashboard
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // Return the SAME response instance where cookies were set
   return response;
 }
