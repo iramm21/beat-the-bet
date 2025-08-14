@@ -2,8 +2,7 @@
 
 import { UserMenu } from "@/features/auth/components/user-menu";
 import { Badge } from "@/components/ui/badge";
-
-type Role = "USER" | "ADMIN";
+import type { Role } from "@/types/role";
 type ProfileForUI = {
   email?: string | null;
   username?: string | null;

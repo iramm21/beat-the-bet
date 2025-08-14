@@ -3,8 +3,7 @@
 import { SidebarLink } from "../ui/sidebar-link";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-
-type Role = "USER" | "ADMIN";
+import type { Role } from "@/types/role";
 type ProfileForUI = {
   email?: string | null;
   username?: string | null;

@@ -18,10 +18,11 @@ import {
   Shield,
   LogOutIcon,
 } from "lucide-react";
+import type { Role } from "@/types/role";
 
 type UserMenuProps = {
   email: string;
-  role?: "USER" | "ADMIN";
+  role?: Role;
 };
 
 export function UserMenu({ email, role = "USER" }: UserMenuProps) {
@@ -70,8 +71,8 @@ export function UserMenu({ email, role = "USER" }: UserMenuProps) {
         {role === "ADMIN" && (
           <>
             <DropdownMenuSeparator />
-            {/* Adjust this path to match your admin route */}
-            <Link href="/admin/dashboard">
+            {/* Link to admin dashboard */}
+            <Link href="/dashboard/admin">
               <DropdownMenuItem className="cursor-pointer">
                 <Shield className="mr-2 h-4 w-4" />
                 Admin

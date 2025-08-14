@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 // Use helpers that are supported in your build.
@@ -85,9 +86,7 @@ export async function createGameAction(
   } catch (err: unknown) {
     // Handle unique constraint (duplicate game/time) gracefully
     const code =
-      typeof err === "object" && err && "code" in err
-        ? (err as any).code
-        : undefined;
+      err instanceof Prisma.PrismaClientKnownRequestError ? err.code : undefined;
     if (code === "P2002") {
       return {
         ok: false,
