@@ -70,18 +70,35 @@ export async function updateSession(request: NextRequest) {
 
   // 3) Admin gate: only allow users with Profile.role === 'ADMIN'
   if (user && isAdminRoute(pathname)) {
-    // Try to read the role from your public Profile table via PostgREST.
-    // Assumes you have an RLS policy that allows users to select their own profile row.
-    const { data: profile, error: profileError } = await supabase
+    // Use a service role client to bypass RLS when checking profile role.
+    // This prevents authorized admins from being blocked if the RLS policy
+    // forbids selecting their profile with the anon key.
+    const supabaseAdmin = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        cookies: {
+          // No cookie manipulation is needed for service role queries
+          getAll() {
+            return [];
+          },
+          setAll() {
+            /* noop */
+          },
+        },
+      }
+    );
+
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("Profile")
       .select("role")
       .eq("userId", user.id)
       .single();
 
-    // If we couldn't fetch, or role is not ADMIN, redirect away from admin
     const role = profile?.role ?? null;
     const isAdmin = role === "ADMIN";
 
+    // If we couldn't fetch, or role is not ADMIN, redirect away from admin
     if (profileError || !isAdmin) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard"; // send non-admins to main dashboard
