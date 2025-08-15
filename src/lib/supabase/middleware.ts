@@ -1,8 +1,9 @@
+// src/lib/supabase/middleware.ts
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Keep this to handle auth route redirects nicely
 function isAuthRoute(pathname: string) {
-  // Allow /auth/callback, /auth/logout, etc. Block only the login/register pages.
   return (
     pathname === "/auth" ||
     pathname === "/auth/login" ||
@@ -11,39 +12,38 @@ function isAuthRoute(pathname: string) {
   );
 }
 
-function isAdminRoute(pathname: string) {
-  // Any route under /dashboard/admin is considered admin-only
-  return (
-    pathname === "/dashboard/admin" || pathname.startsWith("/dashboard/admin/")
-  );
-}
+// NOTE: We intentionally do NOT import prisma here. Middleware runs on Edge.
 
 export async function updateSession(request: NextRequest) {
-  // Create ONE mutable response and return the same instance (so refreshed cookies are attached)
+  // Always return the SAME NextResponse instance so refreshed cookies stick
   const response = NextResponse.next();
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies
-            .getAll()
-            .map(({ name, value }) => ({ name, value }));
-        },
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
-          });
-        },
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set"
+    );
+  }
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies
+          .getAll()
+          .map(({ name, value }) => ({ name, value }));
       },
-    }
-  );
+      setAll(cookies) {
+        cookies.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
 
   // Validate/refresh session and write any updated cookies onto `response`
-  const { data: userData } = await supabase.auth.getUser();
-  const user = userData?.user ?? null;
+  const { data } = await supabase.auth.getUser();
+  const user = data?.user ?? null;
 
   const { pathname, searchParams } = request.nextUrl;
 
@@ -64,32 +64,10 @@ export async function updateSession(request: NextRequest) {
     const redirectTo = request.nextUrl.searchParams.get("redirectTo");
     url.pathname =
       redirectTo && redirectTo.startsWith("/") ? redirectTo : "/dashboard";
-    url.search = ""; // avoid loop/noisy params
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
-  // 3) Admin gate: only allow users with Profile.role === 'ADMIN'
-  if (user && isAdminRoute(pathname)) {
-    // Try to read the role from your public Profile table via PostgREST.
-    // Assumes you have an RLS policy that allows users to select their own profile row.
-    const { data: profile, error: profileError } = await supabase
-      .from("Profile")
-      .select("role")
-      .eq("userId", user.id)
-      .single();
-
-    // If we couldn't fetch, or role is not ADMIN, redirect away from admin
-    const role = profile?.role ?? null;
-    const isAdmin = role === "ADMIN";
-
-    if (profileError || !isAdmin) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard"; // send non-admins to main dashboard
-      url.search = "";
-      return NextResponse.redirect(url);
-    }
-  }
-
-  // Return the SAME response instance where cookies were set
+  // ✅ Admin check removed from middleware (moved to Node layout)
   return response;
 }

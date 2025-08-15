@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { UserMenu } from "./user-menu";
+import type { Role } from "@/types/role";
 
 export async function AuthButton() {
   const supabase = await createClient();
@@ -33,7 +34,7 @@ export async function AuthButton() {
 
   // Prefer DB email if present; fallback to claims.email
   const email = profile?.email ?? (user.email as string) ?? "Account";
-  const role = (profile?.role as "USER" | "ADMIN") ?? "USER";
+  const role = (profile?.role as Role) ?? "USER";
 
   return <UserMenu email={email} role={role} />;
 }
