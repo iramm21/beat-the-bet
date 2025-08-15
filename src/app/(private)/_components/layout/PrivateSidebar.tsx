@@ -92,13 +92,22 @@ export function Sidebar({ profile }: { profile: ProfileForUI }) {
         id: "teams",
         icon: Group,
         label: "Teams",
-        items: [
-          { href: "/dashboard/admin/teams", label: "Manage Teams" },
-
-        ],
+        items: [{ href: "/dashboard/admin/teams", label: "Manage Teams" }],
         cta: {
           href: "/dashboard/admin/teams/new",
           label: "New Team",
+          icon: Plus,
+        },
+        defaultOpen: true,
+      },
+      {
+        id: "seasons",
+        icon: Group,
+        label: "Seasons",
+        items: [{ href: "/dashboard/admin/seasons", label: "Manage Seasons" }],
+        cta: {
+          href: "/dashboard/admin/seasons/new",
+          label: "New Season",
           icon: Plus,
         },
         defaultOpen: true,
