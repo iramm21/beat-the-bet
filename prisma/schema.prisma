@@ -1,23 +1,12 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")  // pooled (PgBouncer 6543)
-  directUrl = env("DIRECT_URL")    // direct (5432) for migrations
-}
-
-enum Role {
-  USER
-  ADMIN
-  // add more later: MODERATOR, ANALYST, etc.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["public", "nrl"]
 }
 
 model Profile {
@@ -28,8 +17,215 @@ model Profile {
   firstName String?
   lastName  String?
   bio       String?
-  role      Role     @default(USER)
   avatarUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  role      Role     @default(USER)
+
+  @@schema("public")
+}
+
+enum Role {
+  USER
+  ADMIN
+
+  @@schema("public")
+}
+
+/// ------------------------------
+/// NRL CORE
+/// ------------------------------
+
+model League {
+  id      String   @id @default(cuid())
+  key     String   @unique // "NRL"
+  name    String
+  seasons Season[]
+
+  @@schema("nrl")
+}
+
+model Season {
+  id       String    @id @default(cuid())
+  leagueId String
+  year     Int
+  rounds   Round[]
+  fixtures Fixture[]
+
+  league League @relation(fields: [leagueId], references: [id])
+
+  @@unique([leagueId, year])
+  @@schema("nrl")
+}
+
+model Round {
+  id       String  @id @default(cuid())
+  seasonId String
+  number   Int
+  name     String? // "Round 1", "Finals Wk1"
+
+  season   Season    @relation(fields: [seasonId], references: [id])
+  fixtures Fixture[]
+
+  @@unique([seasonId, number])
+  @@schema("nrl")
+}
+
+model Team {
+  id        String  @id @default(cuid())
+  code      String  @unique // "BRON", "STH", etc
+  name      String
+  shortName String?
+  homeVenue String?
+
+  homeFixtures Fixture[] @relation("home_team")
+  awayFixtures Fixture[] @relation("away_team")
+
+  @@schema("nrl")
+}
+
+enum FixtureStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  CANCELED
+
+  @@schema("nrl")
+}
+
+model Fixture {
+  id         String        @id @default(cuid())
+  seasonId   String
+  roundId    String?
+  startsAt   DateTime // kickoff (UTC)
+  status     FixtureStatus @default(SCHEDULED)
+  homeTeamId String
+  awayTeamId String
+  venue      String?
+
+  season   Season @relation(fields: [seasonId], references: [id])
+  round    Round? @relation(fields: [roundId], references: [id])
+  homeTeam Team   @relation("home_team", fields: [homeTeamId], references: [id])
+  awayTeam Team   @relation("away_team", fields: [awayTeamId], references: [id])
+
+  results     Result?
+  markets     Market[]
+  odds        Odds[]
+  predictions Prediction[]
+
+  @@unique([seasonId, homeTeamId, awayTeamId, startsAt])
+  @@index([startsAt])
+  @@schema("nrl")
+}
+
+model Result {
+  id        String  @id @default(cuid())
+  fixtureId String  @unique
+  homeScore Int
+  awayScore Int
+  winnerId  String? // nullable for draws
+
+  fixture Fixture @relation(fields: [fixtureId], references: [id])
+
+  @@schema("nrl")
+}
+
+/// ------------------------------
+/// MARKETS & ODDS
+/// ------------------------------
+
+enum MarketKey {
+  MATCH_WINNER // 1x2
+  LINE // spread
+  TOTAL_POINTS // over/under
+
+  @@schema("nrl")
+}
+
+model Market {
+  id        String    @id @default(cuid())
+  fixtureId String
+  key       MarketKey
+  line      Float? // for spread / totals (e.g. -3.5, 41.5)
+
+  fixture Fixture @relation(fields: [fixtureId], references: [id])
+  odds    Odds[]
+
+  @@index([fixtureId, key])
+  @@schema("nrl")
+}
+
+model Bookmaker {
+  id   String @id @default(cuid())
+  key  String @unique // "TAB", "Ladbrokes", etc
+  name String
+
+  odds Odds[]
+
+  @@schema("nrl")
+}
+
+model Odds {
+  id           String   @id @default(cuid())
+  fixtureId    String
+  marketId     String
+  bookmakerId  String
+  outcome      String // "HOME", "AWAY", "DRAW", "OVER", "UNDER" or team code for player props
+  priceDecimal Float // 1.85, 2.10, etc
+  fetchedAt    DateTime // when scraped
+
+  fixture   Fixture   @relation(fields: [fixtureId], references: [id])
+  market    Market    @relation(fields: [marketId], references: [id])
+  bookmaker Bookmaker @relation(fields: [bookmakerId], references: [id])
+
+  @@index([fixtureId, marketId, bookmakerId, fetchedAt])
+  @@schema("nrl")
+}
+
+/// ------------------------------
+/// MODEL OUTPUTS
+/// ------------------------------
+
+model ModelVersion {
+  id        String   @id @default(cuid())
+  name      String // "elo_lr_v1"
+  sha       String   @unique
+  createdAt DateTime @default(now())
+  meta      Json?
+
+  predictions Prediction[]
+
+  @@schema("nrl")
+}
+
+model Prediction {
+  id             String    @id @default(cuid())
+  fixtureId      String
+  modelVersionId String
+  marketKey      MarketKey
+  outcome        String // "HOME","AWAY","DRAW" etc
+  prob           Float // 0..1
+  createdAt      DateTime  @default(now())
+
+  fixture      Fixture      @relation(fields: [fixtureId], references: [id])
+  modelVersion ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  @@index([fixtureId, marketKey, outcome])
+  @@schema("nrl")
+}
+
+/// ------------------------------
+/// OPTIONAL: RAW STAGING (for scraping)
+//  Keep raw payloads to reprocess if parsers change.
+/// ------------------------------
+
+model RawOddsSnapshot {
+  id        String   @id @default(cuid())
+  source    String // "tab", "neds", "xxx"
+  url       String?
+  payload   Json
+  fetchedAt DateTime @default(now())
+
+  @@index([source, fetchedAt])
+  @@schema("nrl")
 }

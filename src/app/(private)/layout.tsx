@@ -1,3 +1,6 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import DashboardChrome from "./_components/layout/DashboardChrome";
 
 export default function DashboardLayout({

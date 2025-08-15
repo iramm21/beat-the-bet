@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import type { Role } from "@/types/role";
 
-export type Role = "USER" | "ADMIN";
+export type { Role } from "@/types/role";
 export type CurrentProfile = {
   userId: string;
   email: string | null;

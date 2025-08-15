@@ -1,8 +1,35 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function DashboardPage() {
+import { prisma } from "@/lib/prisma";
+
+interface FixtureRow {
+  id: string;
+  startsAt: Date;
+  homeTeam: { name: string };
+  awayTeam: { name: string };
+  markets: { key: string }[];
+}
+
+async function getFixtures(): Promise<FixtureRow[]> {
+  return prisma.fixture.findMany({
+    // TEMP: no time filter so we can verify data exists regardless of timestamp/season
+    include: {
+      homeTeam: { select: { name: true } },
+      awayTeam: { select: { name: true } },
+      markets: { select: { key: true } },
+    },
+    orderBy: { startsAt: "asc" },
+    take: 10,
+  });
+}
+
+export default async function DashboardPage() {
+  const fixtures = await getFixtures();
   return (
     <main className="mx-auto w-full max-w-6xl p-6 space-y-6">
       {/* Header */}
@@ -62,25 +89,45 @@ export default function DashboardPage() {
         </Card>
       </section>
 
-      {/* Recent activity (placeholder) */}
-      <section className="grid gap-4 lg:grid-cols-2">
-        <Card className="h-full">
+      {/* Upcoming fixtures */}
+      <section>
+        <Card>
           <CardHeader>
-            <CardTitle>Recent Bets</CardTitle>
+            <CardTitle>Upcoming Fixtures</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            No recent bets yet. When you place or log a bet, it will appear
-            here.
-          </CardContent>
-        </Card>
-
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle>Suggestions</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Connect your models to see suggested bets based on EV/Kelly and your
-            risk.
+          <CardContent>
+            {fixtures.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No fixtures available.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left">
+                      <th className="p-2">Teams</th>
+                      <th className="p-2">Kickoff</th>
+                      <th className="p-2">Markets</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fixtures.map((fixture) => (
+                      <tr key={fixture.id} className="border-t">
+                        <td className="p-2">
+                          {fixture.homeTeam.name} vs {fixture.awayTeam.name}
+                        </td>
+                        <td className="p-2">
+                          {fixture.startsAt.toLocaleString()}
+                        </td>
+                        <td className="p-2">
+                          {fixture.markets.map((m) => m.key).join(", ") || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </section>
