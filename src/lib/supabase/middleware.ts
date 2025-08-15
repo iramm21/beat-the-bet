@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
 
 function isAuthRoute(pathname: string) {
   // Allow /auth/callback, /auth/logout, etc. Block only the login/register pages.
@@ -74,45 +75,14 @@ export async function updateSession(request: NextRequest) {
 
   // 3) Admin gate: only allow users with Profile.role === 'ADMIN'
   if (user && isAdminRoute(pathname)) {
-    // Use a service role client to bypass RLS when checking profile role.
-    // This prevents authorized admins from being blocked if the RLS policy
-    // forbids selecting their profile with the anon key.
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!serviceRoleKey) {
-      console.error(
-        "SUPABASE_SERVICE_ROLE_KEY is not set; cannot verify admin access"
-      );
+    const profile = await prisma.profile.findUnique({
+      where: { userId: user.id },
+      select: { role: true },
+    });
+    const isAdmin = profile?.role === "ADMIN";
+    if (!isAdmin) {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard";
-      url.search = "";
-      return NextResponse.redirect(url);
-    }
-
-    const supabaseAdmin = createServerClient(supabaseUrl, serviceRoleKey, {
-      cookies: {
-        // No cookie manipulation is needed for service role queries
-        getAll() {
-          return [];
-        },
-        setAll() {
-          /* noop */
-        },
-      },
-    });
-
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("Profile")
-      .select("role")
-      .eq("userId", user.id)
-      .single();
-
-    const role = profile?.role ?? null;
-    const isAdmin = role === "ADMIN";
-
-    // If we couldn't fetch, or role is not ADMIN, redirect away from admin
-    if (profileError || !isAdmin) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard"; // send non-admins to main dashboard
       url.search = "";
       return NextResponse.redirect(url);
     }
