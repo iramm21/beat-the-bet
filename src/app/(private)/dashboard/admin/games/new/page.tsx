@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
-import NewGameForm from "@/app/(private)/dashboard/admin/_components/NewGameForm";
+import NewGameForm from "@/features/nrl/fixtures/components/NewGameForm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function AdminNewGamePage() {
