@@ -1,9 +1,9 @@
+// src/lib/supabase/middleware.ts
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
 
+// Keep this to handle auth route redirects nicely
 function isAuthRoute(pathname: string) {
-  // Allow /auth/callback, /auth/logout, etc. Block only the login/register pages.
   return (
     pathname === "/auth" ||
     pathname === "/auth/login" ||
@@ -12,15 +12,10 @@ function isAuthRoute(pathname: string) {
   );
 }
 
-function isAdminRoute(pathname: string) {
-  // Any route under /dashboard/admin is considered admin-only
-  return (
-    pathname === "/dashboard/admin" || pathname.startsWith("/dashboard/admin/")
-  );
-}
+// NOTE: We intentionally do NOT import prisma here. Middleware runs on Edge.
 
 export async function updateSession(request: NextRequest) {
-  // Create ONE mutable response and return the same instance (so refreshed cookies are attached)
+  // Always return the SAME NextResponse instance so refreshed cookies stick
   const response = NextResponse.next();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -47,8 +42,8 @@ export async function updateSession(request: NextRequest) {
   });
 
   // Validate/refresh session and write any updated cookies onto `response`
-  const { data: userData } = await supabase.auth.getUser();
-  const user = userData?.user ?? null;
+  const { data } = await supabase.auth.getUser();
+  const user = data?.user ?? null;
 
   const { pathname, searchParams } = request.nextUrl;
 
@@ -69,25 +64,10 @@ export async function updateSession(request: NextRequest) {
     const redirectTo = request.nextUrl.searchParams.get("redirectTo");
     url.pathname =
       redirectTo && redirectTo.startsWith("/") ? redirectTo : "/dashboard";
-    url.search = ""; // avoid loop/noisy params
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
-  // 3) Admin gate: only allow users with Profile.role === 'ADMIN'
-  if (user && isAdminRoute(pathname)) {
-    const profile = await prisma.profile.findUnique({
-      where: { userId: user.id },
-      select: { role: true },
-    });
-    const isAdmin = profile?.role === "ADMIN";
-    if (!isAdmin) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
-      url.search = "";
-      return NextResponse.redirect(url);
-    }
-  }
-
-  // Return the SAME response instance where cookies were set
+  // ✅ Admin check removed from middleware (moved to Node layout)
   return response;
 }
