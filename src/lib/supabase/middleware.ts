@@ -22,24 +22,28 @@ export async function updateSession(request: NextRequest) {
   // Create ONE mutable response and return the same instance (so refreshed cookies are attached)
   const response = NextResponse.next();
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies
-            .getAll()
-            .map(({ name, value }) => ({ name, value }));
-        },
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
-          });
-        },
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set"
+    );
+  }
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies
+          .getAll()
+          .map(({ name, value }) => ({ name, value }));
       },
-    }
-  );
+      setAll(cookies) {
+        cookies.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
 
   // Validate/refresh session and write any updated cookies onto `response`
   const { data: userData } = await supabase.auth.getUser();
@@ -73,21 +77,28 @@ export async function updateSession(request: NextRequest) {
     // Use a service role client to bypass RLS when checking profile role.
     // This prevents authorized admins from being blocked if the RLS policy
     // forbids selecting their profile with the anon key.
-    const supabaseAdmin = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        cookies: {
-          // No cookie manipulation is needed for service role queries
-          getAll() {
-            return [];
-          },
-          setAll() {
-            /* noop */
-          },
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceRoleKey) {
+      console.error(
+        "SUPABASE_SERVICE_ROLE_KEY is not set; cannot verify admin access"
+      );
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+
+    const supabaseAdmin = createServerClient(supabaseUrl, serviceRoleKey, {
+      cookies: {
+        // No cookie manipulation is needed for service role queries
+        getAll() {
+          return [];
         },
-      }
-    );
+        setAll() {
+          /* noop */
+        },
+      },
+    });
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("Profile")
